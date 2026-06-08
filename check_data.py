@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import pandas as pd
+import numpy as np
 
 path_origin = os.getenv("Reporting-Data")
 files_to_check = ["mny", "mtdvolfeed", "pos", "st4"]
@@ -59,27 +60,72 @@ def check_files(valid_date):
 def format_file_mtd(date):
     full_path = path_origin + file_path + f"/mtdvolfeed{date}.csv"
     mtd = pd.read_csv(full_path)
-    mtd_commission = pd.read_csv(full_path)
+    # mtd = mtd.rename(columns={"COMMISSION": "COMMISSION_FEE"})
+    # currency_cols = [col for col in mtd.columns if col.endswith("_C")]
 
     account_number = mtd["ACCT"].astype(str).str.zfill(5)
-    account = mtd_commission["ACCT"].astype(str).str.zfill(5)
-    mtd = mtd[mtd["WDATID"] == "M"]
-    mtd.insert(0, "Class_ID", "ARB" + account_number + "_" + mtd["CURRENCY"])
-    grouped_mtd = mtd.groupby("Class_ID").agg({"PL_TOTAL": "sum", "OPT_PREMIUM": "sum"})
+    mtd_m = mtd[mtd["WDATID"] == "M"].copy()
 
-    grouped_mtd.to_csv(f"mtd{date}_formatted.csv")
+    # --- Base aggregation (PL_TOTAL, OPT_PREMIUM) ---
+    mtd_m.insert(0, "Class_ID", "ARB" + account_number + "_" + mtd["CURRENCY"])
+    result = mtd_m.groupby("Class_ID").agg({"PL_TOTAL": "sum", "OPT_PREMIUM": "sum"})
 
-    # Commisons
-    mtd_commission.insert(
-        0, "Class_ID", "ARB" + account + "_" + mtd_commission["COMMISSION_C"]
-    )
+    # --- Dynamically find all *_C columns and their matching *_FEE columns ---
+    fee_cols = [col for col in mtd.columns if col.endswith("_C")]
 
-    mtd_commission = mtd_commission.groupby("Class_ID").agg({"COMMISSION": "sum"})
+    def fee_calculation(currency_col, mtd_m):
+        # Derive the fee column name by replacing _C suffix with _FEE
+        fee_col = currency_col[:-2]
+        print(currency_col)
 
-    mtd_commission.to_csv(f"commison{date}.csv")
+        # Here i take out all the probability that an empty value may go past
+        temp_df = mtd_m.copy()
+        temp_df[currency_col] = temp_df[currency_col].str.replace(" ", "")
+        temp_df = temp_df.loc[~(temp_df[currency_col].isna())]
+        temp_df = temp_df.loc[~(temp_df[currency_col] == "")]
+        temp_df = temp_df.loc[~(temp_df[fee_col] == 0)]
 
-    print(date)
-    # return mtd
+        temp_df["Class_ID"] = (
+            "ARB"
+            + temp_df["ACCT"].astype(str).str.zfill(5)
+            + "_"
+            + temp_df[currency_col]
+        )
+
+        aggregated = temp_df.groupby("Class_ID", as_index=False).agg({fee_col: "sum"})
+        print(aggregated)
+        return aggregated
+
+    # If we meet an col that has empty values just go past
+    for currency_col in fee_cols:
+        aggregated = fee_calculation(currency_col, mtd_m)
+
+        if aggregated.empty:
+            continue
+
+        result = result.merge(aggregated, on="Class_ID", how="outer")
+    result = result.fillna(0)
+    result["Total_Fees"] = 0
+    fee_col_list = []
+    for columns in result.columns:
+        if columns in ["PL_TOTAL", "OPT_PREMIUM", "Class_ID", "Total_Fees"]:
+            continue
+
+        fee_col_list.append(columns)
+        result["Total_Fees"] = result["Total_Fees"] + result[columns]
+
+    print(fee_col_list)
+
+    # # --- Handle COMMISSION separately (keeping your original logic) ---
+    # commission_df = mtd_m.copy()
+    # commission_df["Class_ID"] = "ARB" + account_number + "_" + mtd_m["COMMISSION_C"]
+
+    # result = result.groupby("Class_ID").sum()
+    result.to_csv("mtd-result.csv")
+    return result
+
+
+# return mtd
 
 
 def format_file_mny(current_date, previous_date):
