@@ -14,10 +14,12 @@ path_origin = os.getenv("Reporting-Data")
 files_to_check = ["mny", "mtdvolfeed", "pos", "st4"]
 file_path = "Data_Temporary/Wedbush/FTP"
 
+date = "20260525"
+
 
 def validate_date():
     while True:
-        date = input("Enter the date (YYYYMMDD): ")
+        # date = input("Enter the date (YYYYMMDD): ")
 
         try:
             datetime.strptime(date, "%Y%m%d")
@@ -76,7 +78,7 @@ def format_file_mtd(date):
     def fee_calculation(currency_col, mtd_m):
         # Derive the fee column name by replacing _C suffix with _FEE
         fee_col = currency_col[:-2]
-        print(currency_col)
+        # print(currency_col)
 
         # Here i take out all the probability that an empty value may go past
         temp_df = mtd_m.copy()
@@ -93,7 +95,7 @@ def format_file_mtd(date):
         )
 
         aggregated = temp_df.groupby("Class_ID", as_index=False).agg({fee_col: "sum"})
-        print(aggregated)
+        # print(aggregated)
         return aggregated
 
     # If we meet an col that has empty values just go past
@@ -114,7 +116,7 @@ def format_file_mtd(date):
         fee_col_list.append(columns)
         result["Total_Fees"] = result["Total_Fees"] + result[columns]
 
-    print(fee_col_list)
+    # print(fee_col_list)
 
     # # --- Handle COMMISSION separately (keeping your original logic) ---
     # commission_df = mtd_m.copy()
@@ -145,8 +147,59 @@ def format_file_mny(current_date, previous_date):
     current_file = current_file[current_file["MRECID"] == "M"]
     prev_file = prev_file[prev_file["MRECID"] == "M"]
 
-    current_file.to_csv(f"formated_test{current_date}.csv")
-    prev_file.to_csv(f"formated_test{previous_date}.csv")
+    # Take the cols that i need from the prev_file and put them in a list
+    # Make a loop that for each col in that list I shall add to it's name _PREV
+    # Append these cols to the mtd_result file from previous function
+    # On the each step write a print statement to be easier to debug
+
+    # After that do the same thing but for the current file and don't add the _PREV at the end
+
+    mtd_final = format_file_mtd(current_date)
+
+    prev_metrics = prev_file[["MOTE", "MSOV", "MLOV", "MLQVAL", "Class_ID"]]
+    current_metrics = current_file[["MOTE", "MSOV", "MLOV", "MLQVAL", "Class_ID"]]
+    prev_metrics = prev_metrics.rename(
+        columns={
+            "MOTE": "MOTE_PREV",
+            "MLOV": "MLOV_PREV",
+            "MSOV": "MSOV_PREV",
+            "MLQVAL": "MLQVAL_PREV",
+        }
+    )
+
+    final_result = pd.merge(mtd_final, prev_metrics, on="Class_ID", how="inner")
+    final_result = pd.merge(final_result, current_metrics, on="Class_ID", how="inner")
+
+    final_result["UNREALISED"] = (
+        final_result["MOTE"]
+        + final_result["MSOV"]
+        + final_result["MLOV"]
+        - final_result["MOTE_PREV"]
+        - final_result["MSOV_PREV"]
+        - final_result["MLOV_PREV"]
+    )
+
+    final_result["TRD_RESULT_DIFF"] = (
+        final_result["Total_Fees"]
+        + final_result["PL_TOTAL"]
+        + final_result["OPT_PREMIUM"]
+        + final_result["UNREALISED"]
+    )
+
+    final_result["Prev_Bal"] = final_result["MLQVAL_PREV"]
+    final_result["Bal"] = final_result["MLQVAL"]
+
+    final_result["TRD_RESULT"] = final_result["Bal"] - final_result["Prev_Bal"]
+
+    final_result["Final"] = final_result["TRD_RESULT_DIFF"] - final_result["TRD_RESULT"]
+
+    print(prev_metrics.head())
+    print(final_result.head())
+
+    final_result.to_csv(f"final_result{current_date}.csv")
+
+    # current_file.to_csv(f"formated_test{current_date}.csv")
+    # prev_file.to_csv(f"formated_test{previous_date}.csv")
 
 
 def main():
@@ -159,8 +212,8 @@ def main():
 
     if files_exist:
         working_day(current_date)
-        format_file_mtd(current_date)
-        # format_file_mny(current_date, previous_date)
+        # format_file_mtd(current_date)
+        format_file_mny(current_date, previous_date)
     else:
         print("Files do not exist, or some error has occured")
 
