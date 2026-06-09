@@ -1,0 +1,29 @@
+,DONOTIMPORT,JOURNAL,DATE,REVERSEDATE,DESCRIPTION,REFERENCE_NO,SOURCEENTITY,LINE_NO,ACCT_NO,LOCATION_ID,DEPT_ID,GLENTRY_CLASSID,GLENTRY_PROJECTID,DOCUMENT,MEMO,DEBIT,CREDIT,CURRENCY,EXCH_RATE_DATE,EXCH_RATE_TYPE_ID,EXCHANGE_RATE,GLENTRY_CUSTOMERID,GLENTRY_VENDORID,GLENTRY_EMPLOYEEID,GLENTRY_ITEMID,ALLOCATION_ID
+0,,,,,"Wedbush_Trading gain (loss), net_20260525",,,,12100,,,,,,,"0           0.00
+1           0.00
+2           0.00
+3           0.00
+4       19625.66
+         ...    
+572         0.00
+573   -178642.50
+574         0.00
+575     37000.21
+576     12265.00
+Length: 577, dtype: float64",,,,,,,,,,
+1,,,,,"Wedbush_Trading gain (loss), net_20260525",,,,40050,,,,,,,,"0           0.00
+1           0.00
+2           0.00
+3           0.00
+4       19625.66
+         ...    
+572         0.00
+573   -178642.50
+574         0.00
+575     37000.21
+576     12265.00
+Length: 577, dtype: float64",,,,,,,,,
+2,,,,,Wedbush_Brokerage Commissions_20260525,,,,12100,,,,,,,,,,,,,,,,,
+3,,,,,Wedbush_Brokerage Commissions_20260525,,,,50110,,,,,,,,,,,,,,,,,
+4,,,,,Wedbush_Clearing and Exchange Fees_20260525,,,,12100,,,,,,,,,,,,,,,,,
+5,,,,,Wedbush_Clearing and Exchange Fees_20260525,,,,50120,,,,,,,,,,,,,,,,,
