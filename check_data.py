@@ -17,6 +17,7 @@ file_path = "Data_Temporary/Wedbush/FTP"
 # date = "20260525"
 
 
+# Here i get the date from the input and check if the date is a valid type matching my files
 def validate_date():
     while True:
         date = input("Enter the date (YYYYMMDD): ")
@@ -32,23 +33,16 @@ def validate_date():
     return date
 
 
+# This function gets the date and formats it to be 05/25/2026
 def format_date(date):
     date_value = pd.to_datetime(date)
     return f"{date_value.month}/{date_value.day}/{date_value.year}"
 
 
+# Here i find the last working day based on the frequency either monthly or daily
+# If monthly => find the last working day of the previous month
+# If daily => find the last working day goind backwards
 def working_day(date: str, frequency: str = "monthly") -> str:
-    """
-    Find the last working day based on frequency.
-
-    Args:
-        date: Date string in format YYYYMMDD
-        frequency: Either 'monthly' (last working day of previous month)
-                   or 'daily' (last working day before the given date)
-
-    Returns:
-        Date string in format YYYYMMDD
-    """
     if frequency not in ("monthly", "daily"):
         raise ValueError(
             f"Invalid frequency '{frequency}'. Must be 'monthly' or 'daily'."
@@ -72,32 +66,16 @@ def working_day(date: str, frequency: str = "monthly") -> str:
     return date_to_check.strftime("%Y%m%d")
 
 
+# This returns true or false if the previous day was a working day
 def is_previous_day_working(date: str) -> bool:
-    """
-    Check if the day immediately before the given date was a working day (Mon–Fri).
-
-    Args:
-        date: Date string in format YYYYMMDD
-
-    Returns:
-        True if the previous calendar day was a working day, False otherwise
-    """
     raw_date = datetime.strptime(date, "%Y%m%d")
     previous_day = raw_date.date() - timedelta(days=1)
 
     return previous_day.weekday() < 5
 
 
+# Here I find the next workind day
 def next_working_day(date: str) -> str:
-    """
-    Find the next working day after the given date.
-
-    Args:
-        date: Date string in format YYYYMMDD
-
-    Returns:
-        Date string in format YYYYMMDD of the next working day
-    """
     raw_date = datetime.strptime(date, "%Y%m%d")
     date_to_check = raw_date.date() + timedelta(days=1)
 
@@ -107,24 +85,23 @@ def next_working_day(date: str) -> str:
     return date_to_check.strftime("%d/%m/%Y")
 
 
+# Here i get the date user did provide and check if i have files for that date
 def check_files(valid_date):
     for file in files_to_check:
 
         final_file = Path(path_origin) / file_path / f"{file}{valid_date}.csv"
 
         if final_file.exists():
-            # print(f"File exists: {file}{valid_date}.csv")
             return True
         else:
             print(f"File does not exist for the current date: {file}{valid_date}")
             return False
 
 
+# Take the mtdvolfeed file for the provided date and format it to be ready for mny file
 def format_file_mtd(date):
     full_path = path_origin + file_path + f"/mtdvolfeed{date}.csv"
     mtd = pd.read_csv(full_path)
-    # mtd = mtd.rename(columns={"COMMISSION": "COMMISSION_FEE"})
-    # currency_cols = [col for col in mtd.columns if col.endswith("_C")]
 
     account_number = mtd["ACCT"].astype(str).str.zfill(5)
     mtd_m = mtd[mtd["WDATID"] == "M"].copy()
@@ -139,7 +116,6 @@ def format_file_mtd(date):
     def fee_calculation(currency_col, mtd_m):
         # Derive the fee column name by replacing _C suffix with _FEE
         fee_col = currency_col[:-2]
-        # print(currency_col)
 
         # Here i take out all the probability that an empty value may go past
         temp_df = mtd_m.copy()
@@ -156,7 +132,6 @@ def format_file_mtd(date):
         )
 
         aggregated = temp_df.groupby("Class_ID", as_index=False).agg({fee_col: "sum"})
-        # print(aggregated)
         return aggregated
 
     # If we meet an col that has empty values just go past
@@ -167,6 +142,7 @@ def format_file_mtd(date):
             continue
 
         result = result.merge(aggregated, on="Class_ID", how="outer")
+
     result = result.fillna(0)
     result["Total_Fees"] = 0
     fee_col_list = []
@@ -177,39 +153,28 @@ def format_file_mtd(date):
         fee_col_list.append(columns)
         result["Total_Fees"] = result["Total_Fees"] + result[columns]
 
-    # print(fee_col_list)
-
-    # # --- Handle COMMISSION separately (keeping your original logic) ---
-    # commission_df = mtd_m.copy()
-    # commission_df["Class_ID"] = "ARB" + account_number + "_" + mtd_m["COMMISSION_C"]
-
-    # result = result.groupby("Class_ID").sum()
-    result.to_csv("mtd-result.csv")
+    result.to_csv(f"mtd-result{date}.csv")
     return result
 
 
-# return mtd
+# Optimizing the format_file_mny function to not reapeat myself for the current and prev files
+def prepare_mny_file(df):
+    account_number = df["MACCT"].astype(str).str.zfill(5)
+    df.insert(0, "Class_ID", "ARB" + account_number + "_" + df["MCURAT"])
+    df = df[df["MRECID"] == "M"]
+
+    return df
 
 
 def format_file_mny(current_date, previous_date):
-    current_file = pd.read_csv(path_origin + file_path + f"/mny{current_date}.csv")
-    prev_file = pd.read_csv(path_origin + file_path + f"/mny{previous_date}.csv")
+    current_df = pd.read_csv(path_origin + file_path + f"/mny{current_date}.csv")
+    prev_df = pd.read_csv(path_origin + file_path + f"/mny{previous_date}.csv")
     accounts = pd.read_csv(
         "C:/Users/Roman Lupan/ARB Sustained Holdings/Arb-Shares - Corporate/Accounting-Finance/Reporting Data/Sage/TA_Classes/Accounts.csv"
     )
 
-    current_account_number = current_file["MACCT"].astype(str).str.zfill(5)
-    prev_account_number = prev_file["MACCT"].astype(str).str.zfill(5)
-
-    current_file.insert(
-        0, "Class_ID", "ARB" + current_account_number + "_" + current_file["MCURAT"]
-    )
-    prev_file.insert(
-        0, "Class_ID", "ARB" + prev_account_number + "_" + prev_file["MCURAT"]
-    )
-
-    current_file = current_file[current_file["MRECID"] == "M"]
-    prev_file = prev_file[prev_file["MRECID"] == "M"]
+    current_file = prepare_mny_file(current_df)
+    prev_file = prepare_mny_file(prev_df)
 
     current_file = current_file[
         ~current_file["Class_ID"].isin(accounts["Title"].tolist())
@@ -274,11 +239,8 @@ def format_file_mny(current_date, previous_date):
     print(prev_metrics.head())
     print(final_result.head())
 
-    final_result.to_csv(f"final_result{current_date}.csv")
+    final_result.to_csv(f"formatted_mny_{current_date}.csv")
     return final_result
-
-    # current_file.to_csv(f"formated_test{current_date}.csv")
-    # prev_file.to_csv(f"formated_test{previous_date}.csv")
 
 
 def prepare_for_sage(current_date, previous_date):
@@ -295,8 +257,6 @@ def prepare_for_sage(current_date, previous_date):
     # Calculate clearing + exchange_efe
     # other fees = rest of the fees sum()
 
-    # metrics = ["gain/loss", "commissions", "exch-fee"]
-
     sage_template = pd.read_csv("C:/Users/Roman Lupan/Documents/GL-JE_template.csv")
     sage_cols = sage_template.columns.tolist()
 
@@ -305,8 +265,8 @@ def prepare_for_sage(current_date, previous_date):
     formatted_mny["Temporary_Total"] = (
         formatted_mny["CLEARING_FEE"] + formatted_mny["EXCHANG_EFE"]
     )
+
     gl_list_to_post = []
-    cols_to_copy = ["Customer ID", "Location ID", "Department ID"]
 
     def gl_dt_ct(sage_template, df, description, dt_ct_col, acct, date, value_col):
         df_gl = pd.DataFrame(columns=sage_template.columns)
@@ -331,93 +291,54 @@ def prepare_for_sage(current_date, previous_date):
 
         return df_gl
 
-    trd_gain_dt = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Trading gain (loss), net",
-        "DEBIT",
-        "12100",
-        current_date,
-        "TRD_RESULT_CALCULATION",
-    )
+    entries = [
+        (
+            "Wedbush_Trading gain (loss), net",
+            "12100",
+            "40050",
+            "TRD_RESULT_CALCULATION",
+        ),
+        ("Wedbush_Brokerage Commissions", "12100", "50110", "COMMISSION"),
+        ("Wedbush_Clearing and Exchange Fees", "12100", "50120", "Temporary_Total"),
+    ]
 
-    trd_gain_ct = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Trading gain (loss), net",
-        "CREDIT",
-        "40050",
-        current_date,
-        "TRD_RESULT_CALCULATION",
-    )
-
-    trd_gain = pd.concat([trd_gain_dt, trd_gain_ct])
-
-    commissions_dt = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Brokerage Commissions",
-        "DEBIT",
-        "12100",
-        current_date,
-        "COMMISSION",
-    )
-
-    commissions_ct = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Brokerage Commissions",
-        "CREDIT",
-        "50110",
-        current_date,
-        "COMMISSION",
-    )
-
-    commissions = pd.concat([commissions_dt, commissions_ct])
-
-    clearing_exchange_dt = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Clearing and Exchange Fees",
-        "DEBIT",
-        "12100",
-        current_date,
-        "Temporary_Total",
-    )
-
-    clearing_exchange_ct = gl_dt_ct(
-        sage_file,
-        formatted_mny,
-        "Wedbush_Clearing and Exchange Fees",
-        "CREDIT",
-        "50120",
-        current_date,
-        "Temporary_Total",
-    )
-
-    clearing_exchange = pd.concat([clearing_exchange_dt, clearing_exchange_ct])
-
-    gl_list_to_post.append(trd_gain)
-    gl_list_to_post.append(commissions)
-    gl_list_to_post.append(clearing_exchange)
+    for description, debit_acct, credit_acct, reference in entries:
+        dt = gl_dt_ct(
+            sage_file,
+            formatted_mny,
+            description,
+            "DEBIT",
+            debit_acct,
+            current_date,
+            reference,
+        )
+        ct = gl_dt_ct(
+            sage_file,
+            formatted_mny,
+            description,
+            "CREDIT",
+            credit_acct,
+            current_date,
+            reference,
+        )
+        gl_list_to_post.append(pd.concat([dt, ct]))
 
     combined_df = pd.concat(gl_list_to_post, ignore_index=True)
 
-    department_id_map = ta_classes.set_index("Class ID")["Department ID"]
-    location_id_map = ta_classes.set_index("Class ID")["Location ID"]
-    customer_id_map = ta_classes.set_index("Class ID")["Customer ID"]
+    id_maps = {
+        "DEPT_ID": "Department ID",
+        "LOCATION_ID": "Location ID",
+        "GLENTRY_CUSTOMERID": "Customer ID",
+    }
 
-    combined_df["DEPT_ID"] = combined_df["GLENTRY_CLASSID"].map(department_id_map)
-    combined_df["LOCATION_ID"] = combined_df["GLENTRY_CLASSID"].map(location_id_map)
-    combined_df["GLENTRY_CUSTOMERID"] = combined_df["GLENTRY_CLASSID"].map(
-        customer_id_map
-    )
+    for col, source_col in id_maps.items():
+        combined_df[col] = combined_df["GLENTRY_CLASSID"].map(
+            ta_classes.set_index("Class ID")[source_col]
+        )
 
     formatted_date = format_date(current_date)
 
     combined_df["DATE"] = formatted_date
-
-    last_working_day = working_day(current_date, "daily")
 
     if is_previous_day_working(current_date):
         combined_df["JOURNAL"] = "GJ"
@@ -427,63 +348,7 @@ def prepare_for_sage(current_date, previous_date):
         combined_df["JOURNAL"] = "DTA"
         combined_df["REVERSEDATE"] = right_type
 
-    print(f"This is the working day: {last_working_day}")
-
-    trd_gain.to_csv("trd_gain.csv")
-    commissions.to_csv("commissions_dt.csv")
-    clearing_exchange.to_csv("clearing_exchange.csv")
-    combined_df.to_csv("combined_data.csv")
-
-    # mapping = {
-    #     "gain/loss": [
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Trading gain (loss), net_{current_date}",
-    #             "ACCT_NO": 12100,
-    #             "DEBIT": formatted_mny["UNREALISED"]
-    #             + formatted_mny["PL_TOTAL"]
-    #             + formatted_mny["OPT_PREMIUM"],
-    #         },
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Trading gain (loss), net_{current_date}",
-    #             "ACCT_NO": 40050,
-    #             "CREDIT": formatted_mny["UNREALISED"]
-    #             + formatted_mny["PL_TOTAL"]
-    #             + formatted_mny["OPT_PREMIUM"],
-    #         },
-    #     ],
-    #     "commissions": [
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Brokerage Commissions_{current_date}",
-    #             "ACCT_NO": 12100,
-    #         },
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Brokerage Commissions_{current_date}",
-    #             "ACCT_NO": 50110,
-    #         },
-    #     ],
-    #     "exch-fee": [
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Clearing and Exchange Fees_{current_date}",
-    #             "ACCT_NO": 12100,
-    #         },
-    #         {
-    #             "DESCRIPTION": f"Wedbush_Clearing and Exchange Fees_{current_date}",
-    #             "ACCT_NO": 50120,
-    #         },
-    #     ],
-    # }
-
-    # for metric in metrics:
-    #     if metric in mapping:
-    #         for row in mapping[metric]:
-    #             sage_file.loc[len(sage_file)] = row
-
-    # sage_file["CREDIT"] = formatted_mny["UNREALISED"] + formatted_mny["PL_TOTAL"]
-    # sage_file["DEBIT"] = formatted_mny["UNREALISED"] + formatted_mny["OPT_PREMIUM"]
-
-    # sage_file.to_csv("sage_file.csv")
-    # print(sage_file)
-    # print(sage_cols)
+    combined_df.to_csv(f"sage_ready_file_{current_date}.csv")
 
 
 def main():
