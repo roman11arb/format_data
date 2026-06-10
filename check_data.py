@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import pandas as pd
-import numpy as np
 
 path_origin = os.getenv("Reporting-Data")
 files_to_check = ["mny", "mtdvolfeed", "pos", "st4"]
@@ -108,6 +107,7 @@ def format_file_mtd(date):
 
     # --- Base aggregation (PL_TOTAL, OPT_PREMIUM) ---
     mtd_m.insert(0, "Class_ID", "ARB" + account_number + "_" + mtd["CURRENCY"])
+    mtd_m["Class_ID"] = mtd_m["Class_ID"].replace("ARB00005_CNH", "ARB00005_CNY")
     result = mtd_m.groupby("Class_ID").agg({"PL_TOTAL": "sum", "OPT_PREMIUM": "sum"})
 
     # --- Dynamically find all *_C columns and their matching *_FEE columns ---
@@ -161,9 +161,57 @@ def format_file_mtd(date):
 def prepare_mny_file(df):
     account_number = df["MACCT"].astype(str).str.zfill(5)
     df.insert(0, "Class_ID", "ARB" + account_number + "_" + df["MCURAT"])
+    df["Class_ID"] = df["Class_ID"].replace("ARB00005_CNH", "ARB00005_CNY")
     df = df[df["MRECID"] == "M"]
 
     return df
+
+
+def check_if_file_exists(date, df):
+    reports_path = "DailyReports/Daily_missing_accounts"
+    full_reports_path = path_origin + reports_path + f"/missing_accounts_{date}.csv"
+    ta_class_df = pd.read_csv(
+        "C:/Users/Roman Lupan/ARB Sustained Holdings/Arb-Shares - Corporate/Accounting-Finance/Reporting Data/Sage/TA_Classes/TA_Classes.csv"
+    )
+
+    class_id_ta_class = set(ta_class_df["Class ID"])
+    missing_class_id_df = df.loc[~df["Class_ID"].isin(class_id_ta_class)]
+
+    # Step 1: Find class_ids in mny_file not present in accounts_df titles
+    known_classes = set(ta_class_df["Class ID"].dropna().unique())
+    all_class_ids = df["Class_ID"].dropna().unique()
+    missing_ids = [cid for cid in all_class_ids if cid not in known_classes]
+    print(missing_ids)
+
+    # Step 2: Handle missing class_ids
+    for class_id in missing_ids:
+        if os.path.exists(full_reports_path):
+            missing_df = pd.read_csv(full_reports_path, dtype=str)
+
+            # Add only if not already tracked
+            if class_id not in missing_df["Class_ID"].values:
+                new_row = pd.DataFrame([{"Class_ID": class_id}])
+                missing_df = pd.concat([missing_df, new_row], ignore_index=True)
+                missing_df.to_csv(full_reports_path, index=False)
+        else:
+            # Create the file with this first missing entry
+            pd.DataFrame([{"Class_ID": class_id}]).to_csv(
+                full_reports_path, index=False
+            )
+
+    # Step 3: Clean up resolved ARB0* entries
+    if os.path.exists(full_reports_path):
+        missing_df = pd.read_csv(full_reports_path, dtype=str)
+
+        resolved_mask = missing_df["Class_ID"].isin(known_classes) & missing_df[
+            "Class_ID"
+        ].str.startswith("ARB0")
+        missing_df = missing_df[~resolved_mask]
+
+        if missing_df.empty:
+            os.remove(full_reports_path)
+        else:
+            missing_df.to_csv(full_reports_path, index=False)
 
 
 def format_file_mny(current_date, previous_date):
@@ -186,6 +234,9 @@ def format_file_mny(current_date, previous_date):
     prev_file = prev_file.groupby("Class_ID", as_index=False).sum(numeric_only=True)
 
     prev_file = prev_file[~prev_file["Class_ID"].isin(accounts["Title"].tolist())]
+
+    # Check for new class ID's
+    check_if_file_exists(current_date, current_file)
 
     # Take the cols that i need from the prev_file and put them in a list
     # Make a loop that for each col in that list I shall add to it's name _PREV
@@ -236,10 +287,10 @@ def format_file_mny(current_date, previous_date):
 
     final_result["Final"] = final_result["Final"].round(2)
 
-    print(prev_metrics.head())
-    print(final_result.head())
+    # print(prev_metrics.head())
+    # print(final_result.head())
 
-    final_result.to_csv(f"formatted_mny_{current_date}.csv")
+    # final_result.to_csv(f"formatted_mny_{current_date}.csv")
     return final_result
 
 
@@ -362,8 +413,8 @@ def main():
     if files_exist:
         working_day(current_date)
         # format_file_mtd(current_date)
-        # format_file_mny(current_date, previous_date)
-        prepare_for_sage(current_date, previous_date)
+        format_file_mny(current_date, previous_date)
+        # prepare_for_sage(current_date, previous_date)
     else:
         print("Files do not exist, or some error has occured")
 
